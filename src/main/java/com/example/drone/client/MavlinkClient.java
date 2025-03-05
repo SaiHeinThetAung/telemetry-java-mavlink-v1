@@ -45,7 +45,7 @@ public class MavlinkClient {
                     lastMessageTime = System.currentTimeMillis();
                     InetAddress senderAddress = udpInputStream.getSenderAddress();
                     int senderPort = udpInputStream.getSenderPort();
-                    handleMavlinkMessage(message, port, udpSocket, senderAddress, senderPort);
+                    handleUdpMavlinkMessage(message, port, udpSocket, senderAddress, senderPort);
                 }
             }
         } catch (Exception e) {
@@ -67,11 +67,7 @@ public class MavlinkClient {
                 while (true) {
                     MavlinkMessage<?> message = connection.next();
                     if (message != null) {
-                        lastMessageTime = System.currentTimeMillis();
-                        if (message.getPayload() instanceof MissionCount missionCount) {
-                            System.out.println("📌 Received MISSION_COUNT via TCP: " + missionCount.count());
-                            requestMissionItemsTcp(socket, missionCount.count());
-                        }
+                        handleTcpMavlinkMessage(message, socket, tcpPort);
                     }
                 }
             } catch (Exception e) {
@@ -82,40 +78,57 @@ public class MavlinkClient {
         }
     }
 
-    private void handleMavlinkMessage(MavlinkMessage<?> message, int port, DatagramSocket udpSocket, InetAddress senderAddress, int senderPort) {
-        String messageType = message.getPayload().getClass().getSimpleName();
-        System.out.println("📡 [Port " + port + "] Received: " + messageType + " from " + senderAddress.getHostAddress());
-
+    private void handleTcpMavlinkMessage(MavlinkMessage<?> message, Socket socket, int tcpPort) {
+        lastMessageTime = System.currentTimeMillis();
         if (message.getPayload() instanceof MissionCount missionCount) {
-            totalMissionItems.put(port, missionCount.count());
-            requestMissionItems(senderAddress, senderPort, port, udpSocket);
+            System.out.println("\uD83D\uDCE1 Received MISSION_COUNT via TCP: " + missionCount.count());
+            requestMissionItemsTcp(socket, missionCount.count());
         }
 
         if (message.getPayload() instanceof MissionItemInt missionItemInt) {
-            System.out.println("✅ [Port " + port + "] Received Mission Item: Seq " + missionItemInt.seq() +
+            System.out.println("\uD83D\uDCE1 [TcpPort " + tcpPort + "] Received Mission Item: Seq " + missionItemInt.seq() +
                     " (Lat: " + missionItemInt.x() + ", Lon: " + missionItemInt.y() + ", Alt: " + missionItemInt.z() + ")");
         }
 
-        if (!requestedMissionList.get(port)) {
-            requestMissionList(senderAddress, senderPort, port, udpSocket);
-            requestedMissionList.put(port, true);
-        }
+
     }
 
-    private void requestMissionList(InetAddress address, int port, int udpPort, DatagramSocket udpSocket) {
+    private void handleUdpMavlinkMessage(MavlinkMessage<?> message, int port, DatagramSocket udpSocket, InetAddress senderAddress, int senderPort) {
+        String messageType = message.getPayload().getClass().getSimpleName();
+//        System.out.println("📡 [Port " + port + "] Received: " + messageType + " from " + senderAddress.getHostAddress());
+
+        if (message.getPayload() instanceof MissionCount missionCount) {
+            System.out.println("✅ Received MISSION_COUNT via UDP: " + missionCount.count());
+            totalMissionItems.put(port, missionCount.count());
+            requestMissionItemsUdp(senderAddress, senderPort, port, udpSocket);
+        }
+        if (message.getPayload() instanceof MissionItemInt missionItemInt) {
+            System.out.println("✅ [UdpPort " + port + "] Received Mission Item: Seq " + missionItemInt.seq() +
+                    " (Lat: " + missionItemInt.x() + ", Lon: " + missionItemInt.y() + ", Alt: " + missionItemInt.z() + ")");
+        }
+        if (!requestedMissionList.get(port)) {
+            requestMissionListUdp(senderAddress, senderPort, port, udpSocket);
+            requestedMissionList.put(port, true);
+        }
+
+
+
+    }
+
+    private void requestMissionListUdp(InetAddress address, int port, int udpPort, DatagramSocket udpSocket) {
         try {
             ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
             MavlinkConnection connection = MavlinkConnection.create(null, outputStream);
             connection.send1(255, 0, MissionRequestList.builder().targetSystem(1).targetComponent(1).build());
             DatagramPacket packet = new DatagramPacket(outputStream.toByteArray(), outputStream.size(), address, port);
             udpSocket.send(packet);
-            System.out.println("📡 [Port " + udpPort + "] Mission List request sent to " + address.getHostAddress());
+//            System.out.println("📡 [Port " + udpPort + "] Mission List request sent to " + address.getHostAddress());
         } catch (Exception e) {
             System.err.println("❌ Error requesting Mission List on port " + udpPort + ": " + e.getMessage());
         }
     }
 
-    private void requestMissionItems(InetAddress address, int port, int udpPort, DatagramSocket udpSocket) {
+    private void requestMissionItemsUdp(InetAddress address, int port, int udpPort, DatagramSocket udpSocket) {
         int missionCount = totalMissionItems.getOrDefault(udpPort, -1);
         if (missionCount <= 0) return;
 
@@ -126,7 +139,7 @@ public class MavlinkClient {
                 connection.send1(255, 0, MissionRequestInt.builder().targetSystem(1).targetComponent(1).seq(i).build());
                 DatagramPacket packet = new DatagramPacket(outputStream.toByteArray(), outputStream.size(), address, port);
                 udpSocket.send(packet);
-                System.out.println("📡 [Port " + udpPort + "] Requested Mission Item " + i);
+//                System.out.println("📡 [Port " + udpPort + "] Requested Mission Item " + i);
                 Thread.sleep(200);
             }
         } catch (Exception e) {
@@ -144,7 +157,7 @@ public class MavlinkClient {
             InetAddress remoteAddress = socket.getInetAddress();
             int remotePort = socket.getPort();
 
-            System.out.println("📡 [Port " + remotePort + "] Mission List request sent via TCP to " + remoteAddress.getHostAddress());
+//            System.out.println("📡 [Port " + remotePort + "] Mission List request sent via TCP to " + remoteAddress.getHostAddress());
         } catch (Exception e) {
             System.err.println("❌ Error requesting Mission List via TCP: " + e.getMessage());
         }
@@ -163,7 +176,7 @@ public class MavlinkClient {
 
             for (int i = 0; i < missionCount; i++) {
                 connection.send1(255, 0, MissionRequestInt.builder().targetSystem(1).targetComponent(1).seq(i).build());
-                System.out.println("📡 [Port " + remotePort + "] Requested Mission Item " + i + " via TCP to " + remoteAddress.getHostAddress());
+//                System.out.println("📡 [Port " + remotePort + "] Requested Mission Item " + i + " via TCP to " + remoteAddress.getHostAddress());
                 Thread.sleep(200);
             }
         } catch (Exception e) {
