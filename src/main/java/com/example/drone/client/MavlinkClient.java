@@ -6,6 +6,8 @@ import io.dronefleet.mavlink.ardupilotmega.Wind;
 import io.dronefleet.mavlink.common.*;
 import org.springframework.stereotype.Component;
 
+import com.example.drone.config.TelemetryWebSocketHandler;
+
 import java.io.*;
 import java.net.*;
 import java.text.SimpleDateFormat;
@@ -14,7 +16,7 @@ import java.util.concurrent.*;
 
 @Component
 public class MavlinkClient {
-    private final List<Integer> udpPorts = List.of(14551, 14552, 14553, 14554);
+    private final List<Integer> udpPorts = List.of(14552);
     private final Map<Integer, Integer> totalMissionItems = new ConcurrentHashMap<>();
     private final Map<Integer, Boolean> requestedMissionList = new ConcurrentHashMap<>();
     private final Map<Integer, List<Map<String, Object>>> waypointsPerPort = new ConcurrentHashMap<>();  // ✅ Store waypoints per port
@@ -297,8 +299,10 @@ public class MavlinkClient {
         while (isPrintingActive) {
             try {
                 Thread.sleep(1000); // ✅ Log every second
-                for (int port : activePorts) {
-                    logTelemetryData(port, telemetryUdpDataMap.get(port));
+               for (int port : activePorts) {
+                    Map<String, Object> telemetryData = telemetryUdpDataMap.get(port);
+                    logTelemetryData(port, telemetryData); // ✅ Save to log
+                    TelemetryWebSocketHandler.sendTelemetryData(telemetryData);
                 }
                 printTelemetryData();
             } catch (InterruptedException e) {
