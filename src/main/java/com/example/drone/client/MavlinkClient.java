@@ -16,7 +16,7 @@ import java.util.concurrent.*;
 
 @Component
 public class MavlinkClient {
-    private final List<Integer> udpPorts = List.of(14552);
+    private final List<Integer> udpPorts = List.of(14558);
     private final Map<Integer, Integer> totalMissionItems = new ConcurrentHashMap<>();
     private final Map<Integer, Boolean> requestedMissionList = new ConcurrentHashMap<>();
     private final Map<Integer, List<Map<String, Object>>> waypointsPerPort = new ConcurrentHashMap<>();  // ✅ Store waypoints per port
@@ -75,8 +75,17 @@ public class MavlinkClient {
     }
 
     private void startUdpListener(int port) {
-        try (DatagramSocket udpSocket = new DatagramSocket(port)) {
-            System.out.println("✅ Listening for MAVLink messages on UDP port " + port);
+        try {
+            // Get ZeroTier Interface IP
+            InetAddress zeroTierIP = getZeroTierIP();
+            if (zeroTierIP == null) {
+                System.err.println("❌ No ZeroTier IP found, binding to 0.0.0.0 as fallback.");
+                zeroTierIP = InetAddress.getByName("0.0.0.0");
+            }
+
+            DatagramSocket udpSocket = new DatagramSocket(new InetSocketAddress(zeroTierIP, port));
+            System.out.println("✅ Listening for MAVLink messages on ZeroTier IP " + zeroTierIP + " Port: " + port);
+
             UdpInputStream udpInputStream = new UdpInputStream(udpSocket);
             MavlinkConnection mavlinkConnection = MavlinkConnection.create(udpInputStream, null);
             activePorts.add(port);
@@ -94,6 +103,28 @@ public class MavlinkClient {
             portToAddressMap.remove(port);
             System.err.println("❌ Error in UDP Listener (Port " + port + "): " + e.getMessage());
         }
+    }
+
+    private InetAddress getZeroTierIP() {
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = interfaces.nextElement();
+                // Look for ZeroTier Interface (name contains "zt")
+                if (networkInterface.getName().contains("zt")) {
+                    Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+                    while (addresses.hasMoreElements()) {
+                        InetAddress addr = addresses.nextElement();
+                        if (addr instanceof Inet4Address) {
+                            return addr;  // Return first IPv4 address found
+                        }
+                    }
+                }
+            }
+        } catch (SocketException e) {
+            System.err.println("❌ Error getting ZeroTier IP: " + e.getMessage());
+        }
+        return null;
     }
 
     private void handleUdpMavlinkMessage(MavlinkMessage<?> message, int port, DatagramSocket udpSocket, InetAddress senderAddress, int senderPort) {
