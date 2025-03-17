@@ -5,6 +5,7 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -30,6 +31,17 @@ public class TelemetryWebSocketHandler extends TextWebSocketHandler {
     public static void sendTelemetryData(Map<String, Object> telemetryData) {
         try {
             String jsonData = objectMapper.writeValueAsString(telemetryData);
+            for (WebSocketSession session : sessions) {
+                session.sendMessage(new TextMessage(jsonData));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void sendMissionData(List<Map<String, Object>> missionDataList) {
+        try {
+            String jsonData = objectMapper.writeValueAsString(missionDataList);
             for (WebSocketSession session : sessions) {
                 session.sendMessage(new TextMessage(jsonData));
             }
