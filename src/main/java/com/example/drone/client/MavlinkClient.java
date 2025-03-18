@@ -236,6 +236,9 @@ public class MavlinkClient {
             telemetryData.put("wind_vel", wind.speed());
             System.out.println(wind.speed());
         }
+          else if (message.getPayload() instanceof GpsRawInt gpsRawInt) {
+            telemetryData.put("gps_hdop", gpsRawInt.eph() / 100.0);
+        }
 
 
         if (!requestedMissionList.get(port)) {
