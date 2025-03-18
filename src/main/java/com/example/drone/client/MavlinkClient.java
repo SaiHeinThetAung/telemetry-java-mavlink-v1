@@ -16,7 +16,7 @@ import java.util.concurrent.*;
 
 @Component
 public class MavlinkClient {
-    private final List<Integer> udpPorts = List.of(14557,14558);
+    private final List<Integer> udpPorts = List.of(14557);
     private final Map<Integer, Integer> totalMissionItems = new ConcurrentHashMap<>();
     private final Map<Integer, Boolean> requestedMissionList = new ConcurrentHashMap<>();
     private final Map<Integer, List<Map<String, Object>>> waypointsPerPort = new ConcurrentHashMap<>();  // ✅ Store waypoints per port
@@ -168,6 +168,7 @@ public class MavlinkClient {
         if (message.getPayload() instanceof MissionCount missionCount) {
             System.out.println("✅ Received MISSION_COUNT via (" + senderAddress + " / " + port + ") = " + missionCount.count());
             totalMissionItems.put(port, missionCount.count());
+            telemetryData.put("waypoints_count", missionCount.count());
 
             // ✅ Clear old waypoints before starting a new mission list
             waypointsPerPort.put(port, new ArrayList<>());
@@ -233,7 +234,9 @@ public class MavlinkClient {
             telemetryData.put("ch12out", servoOutputRaw.servo12Raw());
         } else if (message.getPayload() instanceof Wind wind) {
             telemetryData.put("wind_vel", wind.speed());
+            System.out.println(wind.speed());
         }
+
 
         if (!requestedMissionList.get(port)) {
             requestMissionListUdp(senderAddress, senderPort, port, udpSocket);
@@ -412,6 +415,7 @@ public class MavlinkClient {
 
                         telemetryList.add(telemetryData);
                     }
+                    printTelemetryData();
                 }
 
                 if (!telemetryList.isEmpty()) {
