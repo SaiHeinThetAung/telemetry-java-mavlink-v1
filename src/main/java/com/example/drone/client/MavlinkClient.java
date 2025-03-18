@@ -58,16 +58,22 @@ public class MavlinkClient {
         data.put("ground_speed", 0.0);
         data.put("wind_vel", 0.0);
         data.put("airspeed", 0.0);
+        data.put("gps_hdop", 0.0);
         data.put("roll", 0.0);
         data.put("pitch", 0.0);
         data.put("yaw", 0.0);
         data.put("ch3percent", null);
         data.put("ch9out", 0.0);
+        data.put("tot", 0.0);
+        data.put("toh", 0.0);
+        data.put("time_in_air", 0.0);
         data.put("ch10out", 0.0);
         data.put("ch11out", 0.0);
         data.put("ch12out", 0.0);
         data.put("battery_voltage", 0.0);
         data.put("battery_current", 0.0);
+        data.put("waypoints_count", 0);
+
         return data;
     }
 
