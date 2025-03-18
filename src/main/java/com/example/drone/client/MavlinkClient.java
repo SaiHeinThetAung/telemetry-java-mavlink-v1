@@ -16,7 +16,7 @@ import java.util.concurrent.*;
 
 @Component
 public class MavlinkClient {
-    private final List<Integer> udpPorts = List.of(14557);
+    private final List<Integer> udpPorts = List.of(14557,14558);
     private final Map<Integer, Integer> totalMissionItems = new ConcurrentHashMap<>();
     private final Map<Integer, Boolean> requestedMissionList = new ConcurrentHashMap<>();
     private final Map<Integer, List<Map<String, Object>>> waypointsPerPort = new ConcurrentHashMap<>();  // ✅ Store waypoints per port
@@ -48,6 +48,8 @@ public class MavlinkClient {
         data.put("GCS_IP", "Unknown");
         data.put("timestamp", getCurrentTimestamp()); // ✅ Dynamic timestamp added
         data.put("systemid", "Unknown");
+        data.put("lat", null);
+        data.put("lon", null);
         data.put("alt", null);
         data.put("dist_traveled", null);
         data.put("wp_dist", null);
