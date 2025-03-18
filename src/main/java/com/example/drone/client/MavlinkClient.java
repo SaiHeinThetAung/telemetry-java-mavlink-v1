@@ -16,7 +16,7 @@ import java.util.concurrent.*;
 
 @Component
 public class MavlinkClient {
-    private final List<Integer> udpPorts = List.of(14557,14558);
+    private final List<Integer> udpPorts = List.of(14557);
     private final Map<Integer, Integer> totalMissionItems = new ConcurrentHashMap<>();
     private final Map<Integer, Boolean> requestedMissionList = new ConcurrentHashMap<>();
     private final Map<Integer, List<Map<String, Object>>> waypointsPerPort = new ConcurrentHashMap<>();  // ✅ Store waypoints per port
