@@ -16,12 +16,14 @@ import java.util.concurrent.*;
 
 @Component
 public class MavlinkClient {
-    private final List<Integer> udpPorts = List.of(14558);
+    private final List<Integer> udpPorts = List.of(14557);
     private final Map<Integer, Integer> totalMissionItems = new ConcurrentHashMap<>();
     private final Map<Integer, Boolean> requestedMissionList = new ConcurrentHashMap<>();
     private final Map<Integer, List<Map<String, Object>>> waypointsPerPort = new ConcurrentHashMap<>();  // ✅ Store waypoints per port
     private final ExecutorService executorService = Executors.newFixedThreadPool(udpPorts.size() + 1);
     private final Map<Integer, LinkedHashMap<String, Object>> telemetryUdpDataMap = new ConcurrentHashMap<>();
+    private final Map<Integer, Long> lastTelemetryUpdate = new ConcurrentHashMap<>(); // ✅ Store last update timestamp
+    private final long TELEMETRY_TIMEOUT_MS = 5000; // ✅ If no update in 5 seconds, consider it disconnected
     private final Map<Integer, InetAddress> portToAddressMap = new ConcurrentHashMap<>();
     private boolean isPrintingActive = true;
     private final Set<Integer> activePorts = ConcurrentHashMap.newKeySet();
@@ -34,6 +36,8 @@ public class MavlinkClient {
     public MavlinkClient() {
         for (int port : udpPorts) {
             telemetryUdpDataMap.put(port, initializeTelemetryData());
+            waypointsPerPort.put(port, new ArrayList<>()); // ✅ Initialize waypoint list
+            createLogFile(port);
             createLogFile(port);
         }
     }
@@ -76,56 +80,65 @@ public class MavlinkClient {
 
     private void startUdpListener(int port) {
         try {
-            // Get ZeroTier Interface IP
-            InetAddress zeroTierIP = getZeroTierIP();
-            if (zeroTierIP == null) {
-                System.err.println("❌ No ZeroTier IP found, binding to 0.0.0.0 as fallback.");
-                zeroTierIP = InetAddress.getByName("0.0.0.0");
+            List<InetAddress> zeroTierIPs = getZeroTierIPs();
+            if (zeroTierIPs.isEmpty()) {
+                System.err.println("❌ No ZeroTier IPs found, binding to 0.0.0.0 as fallback.");
+                zeroTierIPs.add(InetAddress.getByName("0.0.0.0"));
             }
 
-            DatagramSocket udpSocket = new DatagramSocket(new InetSocketAddress(zeroTierIP, port));
-            System.out.println("✅ Listening for MAVLink messages on ZeroTier IP " + zeroTierIP + " Port: " + port);
+            for (InetAddress zeroTierIP : zeroTierIPs) {
+                new Thread(() -> {
+                    try {
+                        DatagramSocket udpSocket = new DatagramSocket(new InetSocketAddress(zeroTierIP, port));
+                        System.out.println("✅ Listening for MAVLink messages on ZeroTier IP " + zeroTierIP + " Port: " + port);
 
-            UdpInputStream udpInputStream = new UdpInputStream(udpSocket);
-            MavlinkConnection mavlinkConnection = MavlinkConnection.create(udpInputStream, null);
-            activePorts.add(port);
+                        UdpInputStream udpInputStream = new UdpInputStream(udpSocket);
+                        MavlinkConnection mavlinkConnection = MavlinkConnection.create(udpInputStream, null);
+                        activePorts.add(port);
 
-            while (true) {
-                MavlinkMessage<?> message = mavlinkConnection.next();
-                if (message != null) {
-                    InetAddress senderAddress = udpInputStream.getSenderAddress();
-                    int senderPort = udpInputStream.getSenderPort();
-                    handleUdpMavlinkMessage(message, port, udpSocket, senderAddress, senderPort);
-                }
+                        while (true) {
+                            MavlinkMessage<?> message = mavlinkConnection.next();
+                            if (message != null) {
+                                InetAddress senderAddress = udpInputStream.getSenderAddress();
+                                int senderPort = udpInputStream.getSenderPort();
+                                handleUdpMavlinkMessage(message, port, udpSocket, senderAddress, senderPort);
+                            }
+                        }
+                    } catch (Exception e) {
+                        activePorts.remove(port);
+                        portToAddressMap.remove(port);
+                        System.err.println("❌ Error in UDP Listener (Port " + port + ", IP " + zeroTierIP + "): " + e.getMessage());
+                    }
+                }).start();
             }
         } catch (Exception e) {
-            activePorts.remove(port);
-            portToAddressMap.remove(port);
-            System.err.println("❌ Error in UDP Listener (Port " + port + "): " + e.getMessage());
+            System.err.println("❌ Failed to start UDP listener: " + e.getMessage());
         }
     }
 
-    private InetAddress getZeroTierIP() {
+    private List<InetAddress> getZeroTierIPs() {
+        List<InetAddress> zeroTierIPs = new ArrayList<>();
         try {
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             while (interfaces.hasMoreElements()) {
                 NetworkInterface networkInterface = interfaces.nextElement();
-                // Look for ZeroTier Interface (name contains "zt")
+                // Look for ZeroTier Interfaces (name contains "zt")
                 if (networkInterface.getName().contains("zt")) {
                     Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
                     while (addresses.hasMoreElements()) {
                         InetAddress addr = addresses.nextElement();
                         if (addr instanceof Inet4Address) {
-                            return addr;  // Return first IPv4 address found
+                            zeroTierIPs.add(addr);  // Add all IPv4 addresses found
                         }
                     }
                 }
             }
         } catch (SocketException e) {
-            System.err.println("❌ Error getting ZeroTier IP: " + e.getMessage());
+            System.err.println("❌ Error getting ZeroTier IPs: " + e.getMessage());
         }
-        return null;
+        return zeroTierIPs;
     }
+
 
     private void handleUdpMavlinkMessage(MavlinkMessage<?> message, int port, DatagramSocket udpSocket, InetAddress senderAddress, int senderPort) {
 
@@ -135,17 +148,50 @@ public class MavlinkClient {
         // ✅ Update timestamp dynamically whenever a new message is received
         telemetryData.put("timestamp", getCurrentTimestamp());
 
+        // ✅ Mark this drone as "recently active"
+        lastTelemetryUpdate.put(port, System.currentTimeMillis());
+
+        // ✅ If it was previously removed due to timeout, restore it
+        if (!activePorts.contains(port)) {
+            System.out.println("🔄 Drone on port " + port + " reconnected!");
+            activePorts.add(port);
+        }
+
         if (message.getPayload() instanceof MissionCount missionCount) {
-            System.out.println("✅ Received MISSION_COUNT via ( " + senderAddress + " / " + port + ") =  " + missionCount.count());
+            System.out.println("✅ Received MISSION_COUNT via (" + senderAddress + " / " + port + ") = " + missionCount.count());
             totalMissionItems.put(port, missionCount.count());
+
+            // ✅ Clear old waypoints before starting a new mission list
+            waypointsPerPort.put(port, new ArrayList<>());
+
             requestMissionItemsUdp(senderAddress, senderPort, port, udpSocket);
         }
 
         if (message.getPayload() instanceof MissionItemInt missionItemInt) {
             saveMissionItem(port, missionItemInt);  // ✅ Store waypoint
+
             System.out.println("✅ [UdpPort " + port + "] Received Mission Item: Seq " + missionItemInt.seq() +
                     " (Lat: " + missionItemInt.x() + ", Lon: " + missionItemInt.y() + ", Alt: " + missionItemInt.z() + ")");
+
+            // ✅ Check if all waypoints are received
+            if (waypointsPerPort.get(port).size() == totalMissionItems.getOrDefault(port, 0)) {
+                sendAllWaypoints(port);
+            }
         }
+
+
+
+//        if (message.getPayload() instanceof MissionCount missionCount) {
+//            System.out.println("✅ Received MISSION_COUNT via ( " + senderAddress + " / " + port + ") =  " + missionCount.count());
+//            totalMissionItems.put(port, missionCount.count());
+//            requestMissionItemsUdp(senderAddress, senderPort, port, udpSocket);
+//        }
+//
+//        if (message.getPayload() instanceof MissionItemInt missionItemInt) {
+//            saveMissionItem(port, missionItemInt);  // ✅ Store waypoint
+//            System.out.println("✅ [UdpPort " + port + "] Received Mission Item: Seq " + missionItemInt.seq() +
+//                    " (Lat: " + missionItemInt.x() + ", Lon: " + missionItemInt.y() + ", Alt: " + missionItemInt.z() + ")");
+//        }
 
         if (message.getPayload() instanceof GlobalPositionInt globalPositionInt) {
             double currentLat = globalPositionInt.lat() / 1e7;
@@ -189,12 +235,26 @@ public class MavlinkClient {
 
     }
 
+    private void sendAllWaypoints(int port) {
+        List<Map<String, Object>> waypoints = waypointsPerPort.get(port);
+        if (waypoints == null || waypoints.isEmpty()) return;
+
+        Map<String, Object> missionData = new LinkedHashMap<>();
+        missionData.put("GCS_IP", telemetryUdpDataMap.get(port).get("GCS_IP"));
+        missionData.put("udp_port", port);
+        missionData.put("waypoints", waypoints);
+
+        System.out.println("This is way point"+waypoints);
+        // ✅ Send all waypoints at once via WebSocket
+        TelemetryWebSocketHandler.sendMissionData(Collections.singletonList(missionData));
+    }
+
     private void saveMissionItem(int port, MissionItemInt missionItemInt) {
         Map<String, Object> waypoint = new LinkedHashMap<>();
-        waypoint.put("mission_seq", missionItemInt.seq());
-        waypoint.put("mission_lat", missionItemInt.x() / 1e7);
-        waypoint.put("mission_lon", missionItemInt.y() / 1e7);
-        waypoint.put("mission_alt", missionItemInt.z());
+        waypoint.put("seq", missionItemInt.seq());
+        waypoint.put("lat", missionItemInt.x() / 1e7);
+        waypoint.put("lon", missionItemInt.y() / 1e7);
+        waypoint.put("alt", missionItemInt.z());
 
         waypointsPerPort.get(port).add(waypoint);  // ✅ Add waypoint to list for this port
     }
@@ -329,13 +389,29 @@ public class MavlinkClient {
     private void printAndLogTelemetryData() {
         while (isPrintingActive) {
             try {
-                Thread.sleep(1000); // ✅ Log every second
-               for (int port : activePorts) {
+                Thread.sleep(1000); // ✅ Send every second
+
+                List<Map<String, Object>> telemetryList = new ArrayList<>();
+
+                for (int port : activePorts) {
                     Map<String, Object> telemetryData = telemetryUdpDataMap.get(port);
-                    logTelemetryData(port, telemetryData); // ✅ Save to log
-                    TelemetryWebSocketHandler.sendTelemetryData(telemetryData);
+                    if (!"Unknown".equals(telemetryData.get("GCS_IP"))) {  // ✅ Only send active drones
+                        logTelemetryData(port, telemetryData); // ✅ Save to log
+
+                        // ✅ Add waypoints to telemetry data
+                        List<Map<String, Object>> waypoints = waypointsPerPort.getOrDefault(port, new ArrayList<>());
+                        telemetryData.put("waypoints", waypoints);
+
+                        telemetryList.add(telemetryData);
+                    }
                 }
-                printTelemetryData();
+
+                if (!telemetryList.isEmpty()) {
+                    Map<String, Object> payload = new HashMap<>();
+                    payload.put("drones", telemetryList);
+                    TelemetryWebSocketHandler.sendTelemetryData(payload);  // ✅ Send telemetry with waypoints
+                }
+
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 System.err.println("❌ Printing thread interrupted.");
