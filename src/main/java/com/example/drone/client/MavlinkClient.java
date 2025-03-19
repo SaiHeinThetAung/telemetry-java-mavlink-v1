@@ -38,7 +38,7 @@ public class MavlinkClient {
             telemetryUdpDataMap.put(port, initializeTelemetryData());
             waypointsPerPort.put(port, new ArrayList<>()); // ✅ Initialize waypoint list
             createLogFile(port);
-            createLogFile(port);
+
         }
     }
 
@@ -216,10 +216,6 @@ public class MavlinkClient {
             telemetryData.put("lat", currentLat);
             telemetryData.put("lon", currentLon);
             telemetryData.put("alt", currentAlt);
-        } else if (message.getPayload() instanceof HomePosition homePosition) {
-            System.out.println("Home Lat"+homePosition.latitude());
-            System.out.println("Home lon"+homePosition.longitude());
-
         } else if (message.getPayload() instanceof VfrHud vfrHud) {
             telemetryData.put("airspeed", vfrHud.airspeed());
             telemetryData.put("ground_speed", vfrHud.groundspeed());
@@ -269,7 +265,6 @@ public class MavlinkClient {
         missionData.put("udp_port", port);
         missionData.put("waypoints", waypoints);
 
-        System.out.println("This is way point"+waypoints);
         // ✅ Send all waypoints at once via WebSocket
         TelemetryWebSocketHandler.sendMissionData(Collections.singletonList(missionData));
     }
@@ -326,25 +321,6 @@ public class MavlinkClient {
         }
     }
 
-    private void printTelemetryDataWithDelay() {
-        while (isPrintingActive) {
-            try {
-                Thread.sleep(1000); // Print every 5 seconds
-                printTelemetryData();
-                logAllTelemetryData();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                System.err.println("❌ Printing thread interrupted.");
-            }
-        }
-    }
-
-    private void logAllTelemetryData(){
-        for(int port: activePorts){
-            logTelemetryData(port, telemetryUdpDataMap.get(port));
-        }
-
-    }
 
     private void printTelemetryData() {
         if (activePorts.isEmpty()) {
@@ -395,7 +371,6 @@ public class MavlinkClient {
         return R * c; // returns the distance in km
     }
 
-    private final Map<Integer, File> logFiles = new ConcurrentHashMap<>();
 
     private void createLogFile(int port) {
         File logDir = new File("logs");
