@@ -16,7 +16,7 @@ import java.util.concurrent.*;
 
 @Component
 public class MavlinkClient {
-    private final List<Integer> udpPorts = List.of(14557);
+    private final List<Integer> udpPorts = List.of(14557, 14558,14559);
     private final Map<Integer, Integer> totalMissionItems = new ConcurrentHashMap<>();
     private final Map<Integer, Boolean> requestedMissionList = new ConcurrentHashMap<>();
     private final Map<Integer, List<Map<String, Object>>> waypointsPerPort = new ConcurrentHashMap<>();  // ✅ Store waypoints per port
@@ -27,8 +27,8 @@ public class MavlinkClient {
     private final Map<Integer, InetAddress> portToAddressMap = new ConcurrentHashMap<>();
     private boolean isPrintingActive = true;
     private final Set<Integer> activePorts = ConcurrentHashMap.newKeySet();
-    private double homeLat = 35.0766961;
-    private double homeLon = 129.0921085;
+    private final Map<Integer, Map<String, Double>> homeLocations = new ConcurrentHashMap<>();
+
 
     // ✅ Date formatter for dynamic timestamps
     private final SimpleDateFormat timestampFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -37,8 +37,8 @@ public class MavlinkClient {
         for (int port : udpPorts) {
             telemetryUdpDataMap.put(port, initializeTelemetryData());
             waypointsPerPort.put(port, new ArrayList<>()); // ✅ Initialize waypoint list
-            createLogFile(port);
-            createLogFile(port);
+//            createLogFile(port);
+
         }
     }
 
@@ -48,6 +48,8 @@ public class MavlinkClient {
         data.put("GCS_IP", "Unknown");
         data.put("timestamp", getCurrentTimestamp()); // ✅ Dynamic timestamp added
         data.put("systemid", "Unknown");
+        data.put("lat", null);
+        data.put("lon", null);
         data.put("alt", null);
         data.put("dist_traveled", null);
         data.put("wp_dist", null);
@@ -56,16 +58,22 @@ public class MavlinkClient {
         data.put("ground_speed", 0.0);
         data.put("wind_vel", 0.0);
         data.put("airspeed", 0.0);
+        data.put("gps_hdop", 0.0);
         data.put("roll", 0.0);
         data.put("pitch", 0.0);
         data.put("yaw", 0.0);
         data.put("ch3percent", null);
         data.put("ch9out", 0.0);
+        data.put("tot", 0.0);
+        data.put("toh", 0.0);
+        data.put("time_in_air", 0.0);
         data.put("ch10out", 0.0);
         data.put("ch11out", 0.0);
         data.put("ch12out", 0.0);
         data.put("battery_voltage", 0.0);
         data.put("battery_current", 0.0);
+        data.put("waypoints_count", 0);
+
         return data;
     }
 
@@ -161,7 +169,8 @@ public class MavlinkClient {
             System.out.println("✅ Received MISSION_COUNT via (" + senderAddress + " / " + port + ") = " + missionCount.count());
             totalMissionItems.put(port, missionCount.count());
 
-            // ✅ Clear old waypoints before starting a new mission list
+            // ✅ Store waypoints per GCS_IP + Port
+            String gcsIp = senderAddress.getHostAddress();
             waypointsPerPort.put(port, new ArrayList<>());
 
             requestMissionItemsUdp(senderAddress, senderPort, port, udpSocket);
@@ -173,7 +182,7 @@ public class MavlinkClient {
             System.out.println("✅ [UdpPort " + port + "] Received Mission Item: Seq " + missionItemInt.seq() +
                     " (Lat: " + missionItemInt.x() + ", Lon: " + missionItemInt.y() + ", Alt: " + missionItemInt.z() + ")");
 
-            // ✅ Check if all waypoints are received
+            // ✅ Ensure all waypoints are received before sending
             if (waypointsPerPort.get(port).size() == totalMissionItems.getOrDefault(port, 0)) {
                 sendAllWaypoints(port);
             }
@@ -197,6 +206,11 @@ public class MavlinkClient {
             double currentLat = globalPositionInt.lat() / 1e7;
             double currentLon = globalPositionInt.lon() / 1e7;
             double currentAlt = globalPositionInt.relativeAlt() / 1000.0;
+
+            // ✅ Get home location for this drone (default to 0 if not set)
+            double homeLat = homeLocations.getOrDefault(port, Map.of("lat", 0.0, "lon", 0.0)).get("lat");
+            double homeLon = homeLocations.getOrDefault(port, Map.of("lat", 0.0, "lon", 0.0)).get("lon");
+
             double distToHome = calculateDistance(currentLat, currentLon, homeLat, homeLon) * 1000.00;
             telemetryData.put("dist_to_home", distToHome);
             telemetryData.put("lat", currentLat);
@@ -225,7 +239,12 @@ public class MavlinkClient {
             telemetryData.put("ch12out", servoOutputRaw.servo12Raw());
         } else if (message.getPayload() instanceof Wind wind) {
             telemetryData.put("wind_vel", wind.speed());
+
         }
+        else if (message.getPayload() instanceof GpsRawInt gpsRawInt) {
+            telemetryData.put("gps_hdop", gpsRawInt.eph() / 100.0);
+        }
+
 
         if (!requestedMissionList.get(port)) {
             requestMissionListUdp(senderAddress, senderPort, port, udpSocket);
@@ -239,12 +258,13 @@ public class MavlinkClient {
         List<Map<String, Object>> waypoints = waypointsPerPort.get(port);
         if (waypoints == null || waypoints.isEmpty()) return;
 
+
+
         Map<String, Object> missionData = new LinkedHashMap<>();
         missionData.put("GCS_IP", telemetryUdpDataMap.get(port).get("GCS_IP"));
         missionData.put("udp_port", port);
         missionData.put("waypoints", waypoints);
 
-        System.out.println("This is way point"+waypoints);
         // ✅ Send all waypoints at once via WebSocket
         TelemetryWebSocketHandler.sendMissionData(Collections.singletonList(missionData));
     }
@@ -256,7 +276,18 @@ public class MavlinkClient {
         waypoint.put("lon", missionItemInt.y() / 1e7);
         waypoint.put("alt", missionItemInt.z());
 
-        waypointsPerPort.get(port).add(waypoint);  // ✅ Add waypoint to list for this port
+        waypointsPerPort.get(port).add(waypoint); // ✅ Add waypoint to list for this port
+
+        // ✅ Set home location per drone if it's the first waypoint (seq 0)
+        if (missionItemInt.seq() == 0) {
+            Map<String, Double> homeLocation = new HashMap<>();
+            homeLocation.put("lat", missionItemInt.x() / 1e7);
+            homeLocation.put("lon", missionItemInt.y() / 1e7);
+            homeLocations.put(port, homeLocation);
+
+            System.out.println("🏠 Home location set for Port " + port + ": Lat = " +
+                    homeLocation.get("lat") + ", Lon = " + homeLocation.get("lon"));
+        }
     }
 
 
@@ -290,25 +321,6 @@ public class MavlinkClient {
         }
     }
 
-    private void printTelemetryDataWithDelay() {
-        while (isPrintingActive) {
-            try {
-                Thread.sleep(1000); // Print every 5 seconds
-                printTelemetryData();
-                logAllTelemetryData();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                System.err.println("❌ Printing thread interrupted.");
-            }
-        }
-    }
-
-    private void logAllTelemetryData(){
-        for(int port: activePorts){
-            logTelemetryData(port, telemetryUdpDataMap.get(port));
-        }
-
-    }
 
     private void printTelemetryData() {
         if (activePorts.isEmpty()) {
@@ -359,7 +371,6 @@ public class MavlinkClient {
         return R * c; // returns the distance in km
     }
 
-    private final Map<Integer, File> logFiles = new ConcurrentHashMap<>();
 
     private void createLogFile(int port) {
         File logDir = new File("logs");
@@ -400,10 +411,17 @@ public class MavlinkClient {
 
                         // ✅ Add waypoints to telemetry data
                         List<Map<String, Object>> waypoints = waypointsPerPort.getOrDefault(port, new ArrayList<>());
+
                         telemetryData.put("waypoints", waypoints);
+
+                        // ✅ Get the home location for this drone (default to 0 if not set)
+                        Map<String, Double> homeLocation = homeLocations.getOrDefault(port, Map.of("lat", 0.0, "lon", 0.0));
+                        telemetryData.put("home_location", homeLocation);
+
 
                         telemetryList.add(telemetryData);
                     }
+                    printTelemetryData();
                 }
 
                 if (!telemetryList.isEmpty()) {
