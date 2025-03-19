@@ -1,0 +1,36 @@
+=== Telemetry Data ===
+Timestamp: 2025-04-02 09:59:41
+Port: 14557
+GCS_IP              : 192.168.100.170
+timestamp           : 2025-04-02 09:59:41
+systemid            : 2
+lat                 : 35.0675415
+lon                 : 129.0862866
+alt                 : 30.744
+dist_traveled       : null
+wp_dist             : 904
+dist_to_home        : 1.346203976476196E7
+vertical_speed      : -0.30540147
+ground_speed        : 25.571323
+wind_vel            : 0.22632311
+airspeed            : 25.13653
+gps_hdop            : 1.21
+roll                : 31.01
+pitch               : -1.96
+yaw                 : 15.44
+ch3percent          : 63.50
+ch9out              : 0
+tot                 : 0.0
+toh                 : 0.0
+time_in_air         : 0.0
+ch10out             : 0
+ch11out             : 0
+ch12out             : 0
+battery_voltage     : 0
+battery_current     : -1
+waypoints_count     : 0
+ch3out              : 1635
+waypoints           : []
+home_location       : {lat=0.0, lon=0.0}
+=====================
+
