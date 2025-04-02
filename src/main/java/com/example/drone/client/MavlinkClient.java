@@ -398,6 +398,51 @@ public class MavlinkClient {
         }
     }
 
+/*Rename Log File */
+//    private void logTelemetryData(int port, Map<String, Object> telemetryData) {
+//        // Extract required fields from telemetry data
+//        String timestamp = getCurrentTimestamp().replace(":", "-").replace(" ", "_");
+//        String gcsIP = telemetryData.getOrDefault("GCS_IP", "UNKNOWN").toString();
+//        String systemID = telemetryData.getOrDefault("system_id", "UNKNOWN").toString();
+//
+//        // Create filename with desired format
+//        String filename = String.format("Received_%s_GCSIP_%s_SYSID_%s_t.log",
+//                timestamp,
+//                gcsIP.replace(".", "-"),
+//                systemID);
+//
+//        // Create logs directory if it doesn't exist
+//        File logsDir = new File("logs");
+//        if (!logsDir.exists()) {
+//            logsDir.mkdirs();
+//        }
+//
+//        File logFile = new File(logsDir, filename);
+//
+//        try (BufferedWriter writer = new BufferedWriter(new FileWriter(logFile, true))) {
+//            // Convert telemetry data to more readable format
+//            StringBuilder logEntry = new StringBuilder();
+//            logEntry.append("=== Telemetry Data ===\n");
+//            logEntry.append("Timestamp: ").append(getCurrentTimestamp()).append("\n");
+//            logEntry.append("Port: ").append(port).append("\n");
+//
+//            // Format each telemetry entry
+//            telemetryData.forEach((key, value) -> {
+//                logEntry.append(String.format("%-20s: %s%n", key, value));
+//            });
+//
+//            logEntry.append("=====================");
+//
+//            writer.write(logEntry.toString());
+//            writer.newLine();
+//            writer.newLine(); // Add extra space between entries
+//            writer.flush();
+//
+//        } catch (IOException e) {
+//            System.err.println("❌ Error writing to log file " + filename + ": " + e.getMessage());
+//        }
+//    }
+
     private void printAndLogTelemetryData() {
         while (isPrintingActive) {
             try {
