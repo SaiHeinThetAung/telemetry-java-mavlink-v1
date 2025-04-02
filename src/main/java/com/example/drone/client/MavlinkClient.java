@@ -377,71 +377,36 @@ public class MavlinkClient {
         File logDir = new File("logs");
         if (!logDir.exists()) logDir.mkdir();
 
-        File logFile = new File(logDir, "telemetry_" + port + ".log");
-        try {
-            if (logFile.createNewFile()) {
-                System.out.println("✅ Log file created: " + logFile.getAbsolutePath());
-            }
-        } catch (IOException e) {
-            System.err.println("❌ Error creating log file for port " + port + ": " + e.getMessage());
-        }
+//        File logFile = new File(logDir, "telemetry_" + port + ".log");
+//        try {
+//            if (logFile.createNewFile()) {
+//                System.out.println("✅ Log file created: " + logFile.getAbsolutePath());
+//            }
+//        } catch (IOException e) {
+//            System.err.println("❌ Error creating log file for port " + port + ": " + e.getMessage());
+//        }
     }
-
+    private String fixedTimestamp=null;
     private void logTelemetryData(int port, Map<String, Object> telemetryData) {
-    File logFile = new File("logs/telemetry_" + port + ".log");
+        // Assign timestamp only the first time function is called
+        if (fixedTimestamp == null) {
+            fixedTimestamp = new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Date());
+        }
+
+        String gcsIP = telemetryData.getOrDefault("GCS_IP", "UNKNOWN").toString();
+        String systemID = telemetryData.getOrDefault("systemid", "UNKNOWN").toString();
+
+        // Correct file name format: Received_20250303_131709_GCSIP_192.168.0.108_SYSID_1_t.log
+        File logFile = new File("logs/Received_" + fixedTimestamp + "_GCSIP_" + gcsIP + "_SYSID_" + systemID + "_t.log");
+
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(logFile, true))) {
-            writer.write("[" + getCurrentTimestamp() + "] " + telemetryData);
+            writer.write("[" + fixedTimestamp + "] " + telemetryData);
             writer.newLine();
             writer.flush(); // ✅ Ensures real-time logging
         } catch (IOException e) {
             System.err.println("❌ Error writing to log file for port " + port + ": " + e.getMessage());
         }
     }
-
-/*Rename Log File */
-//    private void logTelemetryData(int port, Map<String, Object> telemetryData) {
-//        // Extract required fields from telemetry data
-//        String timestamp = getCurrentTimestamp().replace(":", "-").replace(" ", "_");
-//        String gcsIP = telemetryData.getOrDefault("GCS_IP", "UNKNOWN").toString();
-//        String systemID = telemetryData.getOrDefault("system_id", "UNKNOWN").toString();
-//
-//        // Create filename with desired format
-//        String filename = String.format("Received_%s_GCSIP_%s_SYSID_%s_t.log",
-//                timestamp,
-//                gcsIP.replace(".", "-"),
-//                systemID);
-//
-//        // Create logs directory if it doesn't exist
-//        File logsDir = new File("logs");
-//        if (!logsDir.exists()) {
-//            logsDir.mkdirs();
-//        }
-//
-//        File logFile = new File(logsDir, filename);
-//
-//        try (BufferedWriter writer = new BufferedWriter(new FileWriter(logFile, true))) {
-//            // Convert telemetry data to more readable format
-//            StringBuilder logEntry = new StringBuilder();
-//            logEntry.append("=== Telemetry Data ===\n");
-//            logEntry.append("Timestamp: ").append(getCurrentTimestamp()).append("\n");
-//            logEntry.append("Port: ").append(port).append("\n");
-//
-//            // Format each telemetry entry
-//            telemetryData.forEach((key, value) -> {
-//                logEntry.append(String.format("%-20s: %s%n", key, value));
-//            });
-//
-//            logEntry.append("=====================");
-//
-//            writer.write(logEntry.toString());
-//            writer.newLine();
-//            writer.newLine(); // Add extra space between entries
-//            writer.flush();
-//
-//        } catch (IOException e) {
-//            System.err.println("❌ Error writing to log file " + filename + ": " + e.getMessage());
-//        }
-//    }
 
     private void printAndLogTelemetryData() {
         while (isPrintingActive) {
@@ -452,7 +417,7 @@ public class MavlinkClient {
 
                 for (int port : activePorts) {
                     Map<String, Object> telemetryData = telemetryUdpDataMap.get(port);
-                    if (!"Unknown".equals(telemetryData.get("GCS_IP"))) {  // ✅ Only send active drones
+                    if (!"Unknown".equals(telemetryData.get("GCS_IP"))) {// ✅ Only send active drones
                         logTelemetryData(port, telemetryData); // ✅ Save to log
 
                         // ✅ Add waypoints to telemetry data
