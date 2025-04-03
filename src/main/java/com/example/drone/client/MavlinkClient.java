@@ -397,10 +397,10 @@ public class MavlinkClient {
         String systemID = telemetryData.getOrDefault("systemid", "UNKNOWN").toString();
 
         // Correct file name format: Received_20250303_131709_GCSIP_192.168.0.108_SYSID_1_t.log
-        File logFile = new File("logs/Received_" + fixedTimestamp + "_GCSIP_" + gcsIP + "_SYSID_" + systemID + "_t.log");
+        File logFile = new File("logs/Received_" + fixedTimestamp + "_GCSIP_" + gcsIP +"_PORT_" + port +"_SYSID_" + systemID + "_t.log");
 
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(logFile, true))) {
-            writer.write("[" + fixedTimestamp + "] " + telemetryData);
+            writer.write("[" + getCurrentTimestamp() + "] " + telemetryData);
             writer.newLine();
             writer.flush(); // ✅ Ensures real-time logging
         } catch (IOException e) {
